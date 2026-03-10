@@ -1,8 +1,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
-const { convertToUserFriendlyName } = require('../dimensions/utils/convertToUserFriendlyName');
-
 // Shared regex pattern for matching Dimension('dimension_ref') in filter strings
 const DIMENSION_REF_PATTERN = /Dimension\(['"]([^'"]+)['"]\)/g;
 
@@ -28,35 +26,17 @@ function parseDimensionReference(dimRef) {
 
   const parts = dimRef.split('__');
 
-  userFriendlyColumnNameFlag = process.env.USER_FRIENDLY_COLUMN_NAMES;
-
   if (parts.length >= 2) {
-
-    // if process.env.USER_FRIENDLY_COLUMN_NAMES is true, convert the dimension name to a user friendly name
-    // userFriendlyDimensionName = userFriendlyColumnNameFlag === 'true' 
-    // ? convertToUserFriendlyName(parts[1]) 
-    // : parts[1];
-
-    userFriendlyDimensionName = parts[1];
-
     return {
       modelName: parts[0],
-      dimensionName: userFriendlyDimensionName
+      dimensionName: parts[1]
     };
-
   }
 
   // if no __ separator, assume it's just a dimension name in current model
-
-  // userFriendlyDimensionName = userFriendlyColumnNameFlag === 'true' 
-  // ? convertToUserFriendlyName(dimRef) 
-  // : dimRef;
-
-  userFriendlyDimensionName = dimRef;
-
   return {
     modelName: null,
-    dimensionName: userFriendlyDimensionName
+    dimensionName: dimRef
   };
 
 }

@@ -6,7 +6,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 const { canAddMetricToModel, convertMetricToSigma, buildMeasureFormula } = require('../metrics');
 const { buildDimensionFormula, buildEntityExpressionFormula } = require('../dimensions/formula/build_sigma_formula');
-const { convertToUserFriendlyName } = require('../dimensions/utils/convertToUserFriendlyName');
+const { toDisplayName } = require('../../utils/column_name_config');
 const { addTimeRelationships } = require('../time');
 const { sanitizePath } = require('./path_utils');
 
@@ -123,17 +123,12 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
       }]
     };
 
-    const userFriendlyColumnNameFlag = process.env.USER_FRIENDLY_COLUMN_NAMES;
-
     // convert dbt semantics dimensions to Sigma data model columns
     if (semanticModel.dimensions) {
 
       semanticModel.dimensions.forEach(dimension => {
 
-        // if process.env.USER_FRIENDLY_COLUMN_NAMES is true, convert the dimension name to a user friendly name
-        const userFriendlyDimensionName = userFriendlyColumnNameFlag === 'true' 
-          ? convertToUserFriendlyName(dimension.name) 
-          : dimension.name;
+        const userFriendlyDimensionName = toDisplayName(dimension.name);
         
         const column = {
           id: `${dimension.name}`,
@@ -166,7 +161,7 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
         const column = {
           id: `${semanticModel.name}__${entity.name}`,
           name: `${semanticModel.name}__${entity.name}`,
-          formula: buildEntityExpressionFormula(entity, semanticModel.name)
+          formula: buildEntityExpressionFormula(entity, whTablePath[2])
         };
 
         targetData.pages[0].elements[0].columns.push(column);

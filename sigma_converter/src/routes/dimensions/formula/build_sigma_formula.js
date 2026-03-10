@@ -1,16 +1,12 @@
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
-
-const { convertToUserFriendlyName } = require('../utils/convertToUserFriendlyName');
 const { convertColumnReferences } = require('../utils/convertColumnReferences');
 const { convertCase } = require('../utils/convertCase');
 const { convertConcat } = require('../utils/convertConcat');
 const { convertSplitPart } = require('../utils/convertSplitPart');
 const { convertSQLOperators } = require('../utils/convertSQLOperators');
+const { toDisplayName } = require('../../../utils/column_name_config');
 
-// check if user-friendly column names are enabled (converts underscores to spaces)
-// example: my_column → my column when flag is true
-const userFriendlyColumnNameFlag = process.env.USER_FRIENDLY_COLUMN_NAMES;
+// matches a bare SQL identifier (letters, digits, underscores — no operators or spaces)
+const SIMPLE_COLUMN_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
 /**
  * converts SQL expression to Sigma formula syntax
@@ -108,26 +104,19 @@ function buildDimensionFormula(dimension, sourceName, userFriendlyDimensionName)
 /**
  * builds a Sigma column formula for an entity's expression
  * @param {Object} entity - the entity object
- * @param {string} semanticModelName - the name of the semantic model
+ * @param {string} sourceName - the warehouse table name (whTablePath[2])
  * @returns {string} the formula for the entity's expression
  */
-function buildEntityExpressionFormula(entity, semanticModelName) {
+function buildEntityExpressionFormula(entity, sourceName) {
+  const columnName = entity.expr || entity.name;
 
-  if (entity.expr) {
+  // complex expression (SQL with operators/functions) — convert syntax
+  if (entity.expr && !SIMPLE_COLUMN_RE.test(columnName)) {
     return convertExpressionToSigma(entity.expr);
   }
 
-  if (!entity.expr) {
-
-    const userFriendlyName = userFriendlyColumnNameFlag === 'true' 
-    ? convertToUserFriendlyName(entity.name) 
-    : entity.name;
-    
-    return `[${semanticModelName}/${userFriendlyName}]`;
-
-  }
-
-  return `[${semanticModelName}/${entity.name}]`;
+  // simple column reference or no expr — use table-qualified format
+  return `[${sourceName}/${toDisplayName(columnName)}]`;
 }
 
 module.exports = {

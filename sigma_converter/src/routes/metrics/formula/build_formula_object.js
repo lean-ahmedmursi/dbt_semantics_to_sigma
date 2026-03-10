@@ -2,7 +2,6 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 
 const { convertFilterToSigma } = require('../../filter/filter_converter');
-const { convertToUserFriendlyName } = require('../../dimensions/utils/convertToUserFriendlyName');
 
 /**
  * build formula string from measure properties
@@ -11,13 +10,6 @@ const { convertToUserFriendlyName } = require('../../dimensions/utils/convertToU
  */
 function buildMeasureFormula(measure) {
   const { agg, expr } = measure;
-
-  userFriendlyColumnNameFlag = process.env.USER_FRIENDLY_COLUMN_NAMES;
-
-  // if process.env.USER_FRIENDLY_COLUMN_NAMES is true, convert the measure name to a user friendly name
-  // const userFriendlyExpr = userFriendlyColumnNameFlag === 'true' 
-  // ? convertToUserFriendlyName(expr) 
-  // : expr;
 
   const userFriendlyExpr = expr;
   

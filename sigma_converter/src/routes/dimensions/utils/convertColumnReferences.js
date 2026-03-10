@@ -1,10 +1,26 @@
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
-const { convertToUserFriendlyName } = require('./convertToUserFriendlyName');
+const { toDisplayName } = require('../../../utils/column_name_config');
 
-// check if user-friendly column names are enabled (converts underscores to spaces)
-// example: my_column → my column when flag is true
-const userFriendlyColumnNameFlag = process.env.USER_FRIENDLY_COLUMN_NAMES;
+// matches SQL identifiers: letters/digits/underscores starting with letter or underscore
+const COLUMN_REF_RE = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+
+// SQL functions and keywords that should NOT be converted to [function_name]
+// these are preserved as-is because they're SQL syntax, not column references
+const SIGMA_FUNCTIONS = new Set([
+  'splitpart',
+  'substring', 'substr',
+  'concat', 'concat_ws',
+  'upper', 'lower',
+  'trim', 'ltrim', 'rtrim',
+  'coalesce', 'nullif',
+  'case', 'when', 'then', 'else', 'end',
+  'if', 'and', 'or', 'not',
+  'is', 'null', 'true', 'false',
+  'in', 'between', 'like', 'exists',
+  'date_trunc', 'date_part',
+  'extract', 'to_date', 'to_timestamp',
+  'cast',
+  'arraycontains', 'array', 'isnull', 'isnotnull'
+]);
 
 /**
  * converts column references in an expression to Sigma format [column_name]
@@ -37,47 +53,19 @@ function convertColumnReferences(expr) {
   // example: col1   +  col2 → col1 + col2
   let converted = expr.replace(/\s+/g, ' ').trim();
 
-  // step 2: pattern to match column references (identifiers)
-  // matches: identifiers starting with letter/underscore, followed by letters/digits/underscores
-  // uses word boundaries (\b) to avoid partial matches
-  // examples that match: col1, my_column, _private, col123
-  // examples that don't: 123col (starts with digit), col-name (contains hyphen)
-  const columnRefPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
-  
-  // step 3: SQL functions and keywords that should NOT be converted to [function_name]
-  // these are preserved as-is because they're SQL syntax, not column references
-  // example: concat in concat(col1, col2) should remain concat, not [concat]
-  const sigmaFunctions = new Set([
-    'splitpart',
-    'SUBSTRING', 'substring', 'SUBSTR', 'substr',
-    'CONCAT', 'concat', 'CONCAT_WS', 'concat_ws',
-    'UPPER', 'upper', 'LOWER', 'lower',
-    'TRIM', 'trim', 'LTRIM', 'ltrim', 'RTRIM', 'rtrim',
-    'COALESCE', 'coalesce', 'NULLIF', 'nullif',
-    'CASE', 'case', 'WHEN', 'when', 'THEN', 'then', 'ELSE', 'else', 'END', 'end',
-    'IF', 'if', 'AND', 'and', 'OR', 'or', 'NOT', 'not',
-    'IS', 'is', 'NULL', 'null', 'TRUE', 'true', 'FALSE', 'false',
-    'IN', 'in', 'BETWEEN', 'between', 'LIKE', 'like', 'EXISTS', 'exists',
-    'DATE_TRUNC', 'date_trunc', 'DATE_PART', 'date_part',
-    'EXTRACT', 'extract', 'TO_DATE', 'to_date', 'TO_TIMESTAMP', 'to_timestamp',
-    'CAST', 'cast', '::',
-    'arraycontains', 'array', 'isnull', 'isnotnull'
-  ]);
-
   // array to collect all replacements (we'll apply them later in reverse order)
   const replacements = [];
-  let match;
-  
-  // step 4: find all potential column references using the regex pattern
-  // the pattern uses the 'g' flag, so exec() will find all matches
-  while ((match = columnRefPattern.exec(converted)) !== null) {
+
+  // step 2: find all potential column references
+  // matchAll returns a fresh iterator — safe to use a module-scope regex
+  for (const match of converted.matchAll(COLUMN_REF_RE)) {
     const identifier = match[1];  // the matched identifier (e.g., "col1")
     const startPos = match.index; // starting position in the string
     const endPos = startPos + identifier.length; // ending position
     
     // step 4a: skip if it's a SQL function or keyword
     // example: concat in concat(col1, col2) should not become [concat]
-    if (sigmaFunctions.has(identifier.toLowerCase())) {
+    if (SIGMA_FUNCTIONS.has(identifier.toLowerCase())) {
       continue;
     }
     
@@ -109,15 +97,10 @@ function convertColumnReferences(expr) {
     // step 4d: convert the column reference
     // apply user-friendly name conversion if enabled (underscores → spaces)
     // example: my_column → my column if USER_FRIENDLY_COLUMN_NAMES=true
-    const userFriendlyName = userFriendlyColumnNameFlag === 'true' 
-      ? convertToUserFriendlyName(identifier) 
-      : identifier;
-    
-    // store the replacement for later (we'll apply all at once)
     replacements.push({
       start: startPos,
       end: endPos,
-      replacement: `[${identifier}]`
+      replacement: `[${toDisplayName(identifier)}]`
     });
   }
   
