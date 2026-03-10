@@ -19,7 +19,7 @@ function getTimeSpineWhTableFromManifest(manifest, timeSpineName) {
   const timeSpine = timeSpines.find(ts => ts.node_relation?.alias === timeSpineName);
   if (!timeSpine) return null;
   const nr = timeSpine.node_relation;
-  const table = nr.relation_name.split('.').pop();
+  const table = nr.relation_name.split('.').pop().replace(/`/g, '');
   return [nr.database, nr.schema_name, table];
 }
 

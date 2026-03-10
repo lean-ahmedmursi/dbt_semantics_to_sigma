@@ -39,7 +39,7 @@ function rewriteColumnFormulasForForeignEntity(columns, entityName) {
 function getWhTableFromManifest(manifest, semanticModelName) {
   const model = manifest.semantic_models.find(m => m.name === semanticModelName);
   const nr = model.node_relation;
-  const table = nr.relation_name.split('.').pop();
+  const table = nr.relation_name.split('.').pop().replace(/`/g, '');
   return [nr.database, nr.schema_name, table];
 }
 
