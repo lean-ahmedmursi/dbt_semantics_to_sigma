@@ -61,8 +61,7 @@ function convertColumnReferences(expr) {
     'DATE_TRUNC', 'date_trunc', 'DATE_PART', 'date_part',
     'EXTRACT', 'extract', 'TO_DATE', 'to_date', 'TO_TIMESTAMP', 'to_timestamp',
     'CAST', 'cast', '::',
-    'arraycontains', 'array', 'isnull', 'isnotnull',
-    'ArrayContains', 'Array', 'IsNull', 'IsNotNull'
+    'arraycontains', 'array', 'isnull', 'isnotnull'
   ]);
 
   // array to collect all replacements (we'll apply them later in reverse order)
