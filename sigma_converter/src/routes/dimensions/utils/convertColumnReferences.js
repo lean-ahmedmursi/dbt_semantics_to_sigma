@@ -56,7 +56,8 @@ function convertColumnReferences(expr) {
     'COALESCE', 'coalesce', 'NULLIF', 'nullif',
     'CASE', 'case', 'WHEN', 'when', 'THEN', 'then', 'ELSE', 'else', 'END', 'end',
     'IF', 'if', 'AND', 'and', 'OR', 'or', 'NOT', 'not',
-    'IS', 'is', 'NULL', 'null',
+    'IS', 'is', 'NULL', 'null', 'TRUE', 'true', 'FALSE', 'false',
+    'IN', 'in', 'BETWEEN', 'between', 'LIKE', 'like', 'EXISTS', 'exists',
     'DATE_TRUNC', 'date_trunc', 'DATE_PART', 'date_part',
     'EXTRACT', 'extract', 'TO_DATE', 'to_date', 'TO_TIMESTAMP', 'to_timestamp',
     'CAST', 'cast', '::'
