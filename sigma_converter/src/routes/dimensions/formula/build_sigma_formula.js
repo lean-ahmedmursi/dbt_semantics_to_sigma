@@ -6,6 +6,7 @@ const { convertColumnReferences } = require('../utils/convertColumnReferences');
 const { convertCase } = require('../utils/convertCase');
 const { convertConcat } = require('../utils/convertConcat');
 const { convertSplitPart } = require('../utils/convertSplitPart');
+const { convertSQLOperators } = require('../utils/convertSQLOperators');
 
 // check if user-friendly column names are enabled (converts underscores to spaces)
 // example: my_column → my column when flag is true
@@ -60,7 +61,15 @@ function convertExpressionToSigma(expr) {
       changed = true;
       continue;
     }
-    
+
+    // convert SQL operators (IS TRUE/FALSE, IS NULL, IN) to Sigma-native syntax
+    const sqlOpsResult = convertSQLOperators(converted);
+    if (sqlOpsResult && sqlOpsResult !== converted) {
+      converted = sqlOpsResult;
+      changed = true;
+      continue;
+    }
+
     // if no function conversions happened, break
     if (before === converted) {
       break;

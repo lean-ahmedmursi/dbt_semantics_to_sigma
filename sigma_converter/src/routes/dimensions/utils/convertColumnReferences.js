@@ -60,7 +60,9 @@ function convertColumnReferences(expr) {
     'IN', 'in', 'BETWEEN', 'between', 'LIKE', 'like', 'EXISTS', 'exists',
     'DATE_TRUNC', 'date_trunc', 'DATE_PART', 'date_part',
     'EXTRACT', 'extract', 'TO_DATE', 'to_date', 'TO_TIMESTAMP', 'to_timestamp',
-    'CAST', 'cast', '::'
+    'CAST', 'cast', '::',
+    'arraycontains', 'array', 'isnull', 'isnotnull',
+    'ArrayContains', 'Array', 'IsNull', 'IsNotNull'
   ]);
 
   // array to collect all replacements (we'll apply them later in reverse order)
