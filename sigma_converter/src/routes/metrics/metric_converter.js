@@ -154,8 +154,8 @@ function convertMetricToSigma(metric, semanticModel, allMetrics = [], convertedM
   // description is an optional field in dbt metrics
   const sigmaMetric = {
     id: `${metric.name}`,
-    name: metric.name,
-    description: metric.label || metric.description || metric.name
+    name: metric.label || metric.name,
+    description: metric.description || metric.label || metric.name
   };
 
   // handle simple metrics (type: simple)

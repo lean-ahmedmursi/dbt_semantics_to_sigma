@@ -622,7 +622,7 @@ mockSemanticModel.measures.forEach(m => {
     ['ratio formula contains /', result.formula && result.formula.includes('/') ],
     ['ratio formula has numerator', result.formula && result.formula.includes('sum([m_successful_requests])')],
     ['ratio formula has denominator', result.formula && result.formula.includes('sum([m_total_requests])')],
-    ['ratio uses raw name', result.name === 'success_rate'],
+    ['ratio uses label', result.name === 'Success Rate'],
   ];
   checks.forEach(([name, ok]) => {
     if (ok) { passed++; } else { failed++; console.error(`FAIL: Ratio metric — ${name}. Got: ${result.formula}`); }
@@ -644,7 +644,7 @@ mockSemanticModel.measures.forEach(m => {
     ['cumulative has formula', !!result.formula],
     ['cumulative formula uses measure', result.formula && result.formula.includes('countdistinct')],
     ['cumulative description has note', result.description && result.description.includes('Cumulative')],
-    ['cumulative uses raw name', result.name === 'cumulative_users'],
+    ['cumulative uses label', result.name === 'Cumulative Users'],
   ];
   checks.forEach(([name, ok]) => {
     if (ok) { passed++; } else { failed++; console.error(`FAIL: Cumulative metric — ${name}. Got: ${JSON.stringify(result)}`); }
@@ -670,7 +670,7 @@ mockSemanticModel.measures.forEach(m => {
     ['derived has formula', !!result.formula],
     ['derived replaces NULLIF', result.formula && !result.formula.includes('NULLIF')],
     ['derived has if() for NULLIF', result.formula && result.formula.includes('if(')],
-    ['derived uses raw name', result.name === 'avg_per_user'],
+    ['derived uses label', result.name === 'Avg per User'],
   ];
   checks.forEach(([name, ok]) => {
     if (ok) { passed++; } else { failed++; console.error(`FAIL: Derived metric — ${name}. Got: ${result.formula}`); }
