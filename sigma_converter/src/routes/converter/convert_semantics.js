@@ -128,12 +128,12 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
 
       semanticModel.dimensions.forEach(dimension => {
 
-        const userFriendlyDimensionName = dimension.label || toDisplayName(dimension.name);
+        const userFriendlyDimensionName = toDisplayName(dimension.name);
 
         const column = {
           id: `${dimension.name}`,
-          name: dimension.label || dimension.name,
-          description: dimension.description,
+          name: dimension.name,
+          description: dimension.label || dimension.description || dimension.name,
           formula: buildDimensionFormula(dimension, whTablePath[2], userFriendlyDimensionName)
         };
 
@@ -320,8 +320,8 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
         if (measure.create_metric === true) {
           targetData.pages[0].elements[0].metrics.push({
             id: `${measure.name}`,
-            name: measure.label || measure.name,
-            description: measure.description || measure.label || measure.name,
+            name: measure.name,
+            description: measure.label || measure.description || measure.name,
             formula: formulaObject.formula
           });
         }
