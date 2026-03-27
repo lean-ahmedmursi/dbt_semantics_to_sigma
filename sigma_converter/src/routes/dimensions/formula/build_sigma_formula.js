@@ -28,66 +28,71 @@ function convertExpressionToSigma(expr, sourceName) {
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
   
-  // bind sourceName so recursive calls from CASE/COALESCE/CONCAT/SPLIT_PART carry it through
-  const recurse = (subExpr) => convertExpressionToSigma(subExpr, sourceName);
+  try {
+    // bind sourceName so recursive calls from CASE/COALESCE/CONCAT/SPLIT_PART carry it through
+    const recurse = (subExpr) => convertExpressionToSigma(subExpr, sourceName);
 
-  // apply conversions iteratively until no more changes
-  while (changed && iterations < maxIterations) {
-    changed = false;
-    iterations++;
+    // apply conversions iteratively until no more changes
+    while (changed && iterations < maxIterations) {
+      changed = false;
+      iterations++;
 
-    const before = converted;
+      const before = converted;
 
-    // convert CASE first because it may contain other functions
-    const caseResult = convertCase(converted, recurse);
-    if (caseResult && caseResult !== converted) {
-      converted = caseResult;
-      changed = true;
-      continue;
+      // convert CASE first because it may contain other functions
+      const caseResult = convertCase(converted, recurse);
+      if (caseResult && caseResult !== converted) {
+        converted = caseResult;
+        changed = true;
+        continue;
+      }
+
+      // convert COALESCE (may appear inside CASE results or standalone)
+      const coalesceResult = convertCoalesce(converted, recurse);
+      if (coalesceResult && coalesceResult !== converted) {
+        converted = coalesceResult;
+        changed = true;
+        continue;
+      }
+
+      // convert CONCAT (may appear inside CASE results or standalone)
+      const concatResult = convertConcat(converted, recurse);
+      if (concatResult && concatResult !== converted) {
+        converted = concatResult;
+        changed = true;
+        continue;
+      }
+
+      // convert SPLIT_PART (may appear inside CASE, CONCAT, or standalone)
+      const splitPartResult = convertSplitPart(converted, recurse);
+      if (splitPartResult && splitPartResult !== converted) {
+        converted = splitPartResult;
+        changed = true;
+        continue;
+      }
+
+      // convert SQL operators (IS TRUE/FALSE, IS NULL, IN) to Sigma-native syntax
+      const sqlOpsResult = convertSQLOperators(converted);
+      if (sqlOpsResult && sqlOpsResult !== converted) {
+        converted = sqlOpsResult;
+        changed = true;
+        continue;
+      }
+
+      // if no function conversions happened, break
+      if (before === converted) {
+        break;
+      }
     }
 
-    // convert COALESCE (may appear inside CASE results or standalone)
-    const coalesceResult = convertCoalesce(converted, recurse);
-    if (coalesceResult && coalesceResult !== converted) {
-      converted = coalesceResult;
-      changed = true;
-      continue;
-    }
+    // convert any remaining column references (table-qualified when sourceName provided)
+    converted = convertColumnReferences(converted, sourceName);
 
-    // convert CONCAT (may appear inside CASE results or standalone)
-    const concatResult = convertConcat(converted, recurse);
-    if (concatResult && concatResult !== converted) {
-      converted = concatResult;
-      changed = true;
-      continue;
-    }
-
-    // convert SPLIT_PART (may appear inside CASE, CONCAT, or standalone)
-    const splitPartResult = convertSplitPart(converted, recurse);
-    if (splitPartResult && splitPartResult !== converted) {
-      converted = splitPartResult;
-      changed = true;
-      continue;
-    }
-
-    // convert SQL operators (IS TRUE/FALSE, IS NULL, IN) to Sigma-native syntax
-    const sqlOpsResult = convertSQLOperators(converted);
-    if (sqlOpsResult && sqlOpsResult !== converted) {
-      converted = sqlOpsResult;
-      changed = true;
-      continue;
-    }
-
-    // if no function conversions happened, break
-    if (before === converted) {
-      break;
-    }
+    return converted;
+  } catch (error) {
+    console.warn(`Warning: Error converting expression '${expr}': ${error.message}. Using raw expression.`);
+    return sourceName ? `[${sourceName}/${expr}]` : `[${expr}]`;
   }
-
-  // convert any remaining column references (table-qualified when sourceName provided)
-  converted = convertColumnReferences(converted, sourceName);
-
-  return converted;
 }
 
 /**

@@ -59,7 +59,6 @@ class LayerProcessor {
   async createDummySigmaDataModel(modelName, modelData) {
     // TODO: Replace with actual Sigma API call
     console.log(`[PLACEHOLDER] Creating Sigma data model for: ${modelName}`);
-    //console.log(`[PLACEHOLDER] Model data:`, JSON.stringify(modelData, null, 2));
     
     // simulate API delay
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -326,8 +325,6 @@ class LayerProcessor {
     const { name, filePath, primaryEntity, foreignEntities } = model;
     
     console.log(`\n  Processing model: ${name} (Layer ${layerNumber})`);
-    //console.log(`    Primary Entity: ${primaryEntity}`);
-    //console.log(`    Foreign Entities: ${foreignEntities.join(', ') || 'None'}`);
     
     try {
       // construct file paths (sanitize to prevent path traversal)

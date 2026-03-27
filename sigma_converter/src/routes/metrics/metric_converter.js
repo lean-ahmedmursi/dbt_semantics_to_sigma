@@ -162,7 +162,8 @@ function convertMetricToSigma(metric, semanticModel, allMetrics = [], convertedM
   if (metric.type === 'simple' && metric.type_params?.measure) {
 
     // create a synthetic expression and typeParamMetrics to reuse convertExpression
-    const measureName = metric.type_params.measure;
+    const measureRef = metric.type_params.measure;
+    const measureName = typeof measureRef === 'string' ? measureRef : measureRef.name;
     const expr = measureName; // Expression is just the measure name
     const typeParamMetrics = [{
       name: measureName,
@@ -197,6 +198,10 @@ function convertMetricToSigma(metric, semanticModel, allMetrics = [], convertedM
   if (metric.type === 'cumulative' && metric.type_params?.measure) {
     const measureRef = metric.type_params.measure;
     const measureName = typeof measureRef === 'string' ? measureRef : measureRef.name;
+    if (!measureName) {
+      console.warn(`Warning: Invalid measure reference in cumulative metric '${metric.name}'`);
+      return sigmaMetric;
+    }
     const typeParamMetrics = [{ name: measureName }];
 
     sigmaMetric.formula = convertExpression(measureName, typeParamMetrics, semanticModel, allMetrics, convertedMetrics);
