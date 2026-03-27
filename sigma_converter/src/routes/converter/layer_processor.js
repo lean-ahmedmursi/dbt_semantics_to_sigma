@@ -390,9 +390,20 @@ class LayerProcessor {
       } else {
 
         if (this.mode === 'update' && existingDataModelId) {
-          // update mode: call Sigma API to update existing data model
+          // update mode: try to update existing data model, fall back to create if archived/deleted
           console.log(`    Updating existing data model: ${existingDataModelId}`);
-          sigmaModelId = await updateDataModelInSigma(existingDataModelId, convertedData);
+          try {
+            sigmaModelId = await updateDataModelInSigma(existingDataModelId, convertedData);
+          } catch (updateError) {
+            const status = updateError.response?.status;
+            const msg = updateError.response?.data?.message || '';
+            if (status === 400 || status === 404 || status === 409 || msg.includes('archived')) {
+              console.warn(`    Update failed (${msg || status}), falling back to create...`);
+              sigmaModelId = await createDataModelInSigma(convertedData);
+            } else {
+              throw updateError;
+            }
+          }
         } else {
           // initial mode: call Sigma API to create new data model
           console.log(`    Creating new data model`);
