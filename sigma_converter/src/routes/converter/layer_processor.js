@@ -432,6 +432,7 @@ class LayerProcessor {
         success: false,
         modelName: name,
         filePath: filePath,
+        primaryEntity: primaryEntity,
         error: error.message
       };
     }
@@ -508,50 +509,53 @@ class LayerProcessor {
       }
     };
     
+    // track failed entity names across layers so dependent models can be skipped
+    const failedEntityNames = new Set();
+
     // process each layer sequentially
     for (const layer of dagData.layers) {
-      const layerResults = await this.processLayer(layer.models, layer.layer);
-      
+      // filter out models whose foreign entities depend on a previously failed model
+      const eligible = [];
+      const skipped = [];
+      for (const model of layer.models) {
+        const deps = (model.foreignEntities || []).map(fe =>
+          typeof fe === 'string' ? fe : fe.name
+        );
+        const blockedBy = deps.filter(d => failedEntityNames.has(d));
+        if (blockedBy.length > 0) {
+          console.warn(`  ⊘ Skipping ${model.name} — depends on failed: ${blockedBy.join(', ')}`);
+          skipped.push({
+            success: false,
+            modelName: model.name,
+            filePath: model.filePath,
+            error: `Skipped: depends on failed entity(s) ${blockedBy.join(', ')}`
+          });
+        } else {
+          eligible.push(model);
+        }
+      }
+
+      const layerResults = await this.processLayer(eligible, layer.layer);
+
+      // record failed models' primary entities so downstream layers can skip dependents
+      for (const result of layerResults) {
+        if (!result.success && result.primaryEntity) {
+          failedEntityNames.add(result.primaryEntity);
+        }
+      }
+
+      const combinedResults = [...layerResults, ...skipped];
+
       allResults.layers.push({
         layer: layer.layer,
         modelCount: layer.modelCount,
-        results: layerResults
+        results: combinedResults
       });
-      
+
       // update summary
-      allResults.summary.processedModels += layerResults.length;
-      allResults.summary.successfulModels += layerResults.filter(r => r.success).length;
-      allResults.summary.failedModels += layerResults.filter(r => !r.success).length;
-
-      // check for failures that block dependent layers
-      const layerFailures = layerResults.filter(r => !r.success);
-      if (layerFailures.length > 0) {
-        const failedNames = layerFailures.map(r => r.modelName);
-        const remainingLayers = dagData.layers.slice(dagData.layers.indexOf(layer) + 1);
-        let hasBlockedDependents = false;
-
-        for (const futureLayer of remainingLayers) {
-          for (const futureModel of futureLayer.models) {
-            if (futureModel.foreignEntities?.some(fe => {
-              const smName = typeof fe === 'string' ? fe : fe.semanticModelName;
-              return failedNames.includes(smName);
-            })) {
-              hasBlockedDependents = true;
-              break;
-            }
-          }
-          if (hasBlockedDependents) break;
-        }
-
-        if (hasBlockedDependents) {
-          const errorMsg = `Layer ${layer.layer} had failures: [${failedNames.join(', ')}]. ` +
-            `Aborting subsequent layers that depend on failed models.`;
-          console.error(errorMsg);
-          allResults.summary.aborted = true;
-          allResults.summary.abortReason = errorMsg;
-          break;
-        }
-      }
+      allResults.summary.processedModels += combinedResults.length;
+      allResults.summary.successfulModels += combinedResults.filter(r => r.success).length;
+      allResults.summary.failedModels += combinedResults.filter(r => !r.success).length;
     }
     
     // print final summary
