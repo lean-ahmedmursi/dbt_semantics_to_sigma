@@ -8,6 +8,7 @@ const { createDataModelInSigma } = require('../sigma_api/create_data_model');
 const { updateDataModelInSigma } = require('../sigma_api/update_data_model');
 const { getDataModelFromSigma } = require('../sigma_api/get_data_model');
 const { sanitizePath } = require('./path_utils');
+const yaml = require('js-yaml');
 
 /**
  * layer-by-layer processor for DAG-based semantic model conversion
@@ -263,6 +264,59 @@ class LayerProcessor {
   }
 
   /**
+   * Discover metrics from metrics-only sibling YAML files that reference
+   * measures owned by the given semantic model.
+   * @param {string} sourceFilePath - absolute path to the source YAML file
+   * @param {string} modelName - name of the semantic model being processed
+   * @param {Array} measures - measures defined in the semantic model
+   * @returns {Array} external metrics that reference this model's measures
+   */
+  discoverExternalMetrics(sourceFilePath, modelName, measures) {
+    const measureNames = new Set((measures || []).map(m => m.name));
+    if (measureNames.size === 0) return [];
+
+    const sourceDir = path.dirname(sourceFilePath);
+    const resolved = path.resolve(sourceFilePath);
+    const externalMetrics = [];
+
+    try {
+      const siblings = fs.readdirSync(sourceDir).filter(f =>
+        (f.endsWith('.yml') || f.endsWith('.yaml')) &&
+        path.resolve(path.join(sourceDir, f)) !== resolved
+      );
+
+      for (const sibling of siblings) {
+        try {
+          const data = yaml.load(fs.readFileSync(path.join(sourceDir, sibling), 'utf8'));
+          // only metrics-only files (no semantic_models section)
+          if (!data?.metrics || !Array.isArray(data.metrics) || data?.semantic_models) continue;
+
+          for (const metric of data.metrics) {
+            const refMeasure = metric.type_params?.measure;
+            const refName = typeof refMeasure === 'string' ? refMeasure : refMeasure?.name;
+            const refsInMetrics = (metric.type_params?.metrics || []).map(m =>
+              typeof m === 'string' ? m : m.name
+            );
+            const allRefs = refName ? [refName, ...refsInMetrics] : refsInMetrics;
+            if (allRefs.some(r => measureNames.has(r))) {
+              externalMetrics.push(metric);
+            }
+          }
+        } catch (e) {
+          // skip unparseable files
+        }
+      }
+    } catch (e) {
+      // source directory not readable
+    }
+
+    if (externalMetrics.length > 0) {
+      console.log(`    Found ${externalMetrics.length} external metrics for ${modelName}`);
+    }
+    return externalMetrics;
+  }
+
+  /**
    * process a single model in a layer
    * @param {Object} model - model information from DAG
    * @param {number} layerNumber - current layer number
@@ -293,6 +347,14 @@ class LayerProcessor {
         existingDataModelId = this.getExistingDataModelId(name);
       }
 
+      // discover external metrics from metrics-only sibling files
+      const sourceData = yaml.load(fs.readFileSync(sourceFilePath, 'utf8'));
+      const semanticModel = sourceData.semantic_models?.find(m => m.name === name)
+        || sourceData.semantic_models?.[0];
+      const externalMetrics = this.discoverExternalMetrics(
+        sourceFilePath, name, semanticModel?.measures
+      );
+
       // prepare conversion options
       const conversionOptions = {
         outputDir: this.outputDir,
@@ -304,6 +366,7 @@ class LayerProcessor {
         modelName: name,  // specify which semantic model to process from the file
         timeSpineFile: this.timeSpineFile,
         foreignEntities: foreignEntities,  // pass foreign entities from DAG
+        externalMetrics: externalMetrics,   // metrics from metrics-only sibling files
         ...(existingDataModelId && { dataModelId: existingDataModelId })
       };
       
@@ -459,6 +522,36 @@ class LayerProcessor {
       allResults.summary.processedModels += layerResults.length;
       allResults.summary.successfulModels += layerResults.filter(r => r.success).length;
       allResults.summary.failedModels += layerResults.filter(r => !r.success).length;
+
+      // check for failures that block dependent layers
+      const layerFailures = layerResults.filter(r => !r.success);
+      if (layerFailures.length > 0) {
+        const failedNames = layerFailures.map(r => r.modelName);
+        const remainingLayers = dagData.layers.slice(dagData.layers.indexOf(layer) + 1);
+        let hasBlockedDependents = false;
+
+        for (const futureLayer of remainingLayers) {
+          for (const futureModel of futureLayer.models) {
+            if (futureModel.foreignEntities?.some(fe => {
+              const smName = typeof fe === 'string' ? fe : fe.semanticModelName;
+              return failedNames.includes(smName);
+            })) {
+              hasBlockedDependents = true;
+              break;
+            }
+          }
+          if (hasBlockedDependents) break;
+        }
+
+        if (hasBlockedDependents) {
+          const errorMsg = `Layer ${layer.layer} had failures: [${failedNames.join(', ')}]. ` +
+            `Aborting subsequent layers that depend on failed models.`;
+          console.error(errorMsg);
+          allResults.summary.aborted = true;
+          allResults.summary.abortReason = errorMsg;
+          break;
+        }
+      }
     }
     
     // print final summary

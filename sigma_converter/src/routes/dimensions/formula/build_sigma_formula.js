@@ -2,6 +2,7 @@ const { convertColumnReferences } = require('../utils/convertColumnReferences');
 const { convertCase } = require('../utils/convertCase');
 const { convertConcat } = require('../utils/convertConcat');
 const { convertSplitPart } = require('../utils/convertSplitPart');
+const { convertCoalesce } = require('../utils/convertCoalesce');
 const { convertSQLOperators } = require('../utils/convertSQLOperators');
 const { toDisplayName } = require('../../../utils/column_name_config');
 
@@ -42,6 +43,14 @@ function convertExpressionToSigma(expr) {
       continue;
     }
     
+    // convert COALESCE (may appear inside CASE results or standalone)
+    const coalesceResult = convertCoalesce(converted, convertExpressionToSigma);
+    if (coalesceResult && coalesceResult !== converted) {
+      converted = coalesceResult;
+      changed = true;
+      continue;
+    }
+
     // convert CONCAT (may appear inside CASE results or standalone)
     const concatResult = convertConcat(converted, convertExpressionToSigma);
     if (concatResult && concatResult !== converted) {

@@ -34,10 +34,15 @@ function convertCase(expr, convertExpressionToSigma) {
   
   // step 3: find the positions of CASE and END keywords
   // using toLowerCase() for case-insensitive matching
-  // lastIndexOf('end') handles nested CASE statements (finds the outermost END)
+  // find the last word-boundary 'end' — avoids matching 'end' inside identifiers like 'blender'
   // example: "CASE WHEN x=1 THEN CASE WHEN y=2 THEN 3 END END" → finds outer END
   const caseIndex = normalized.toLowerCase().indexOf('case');
-  const endIndex = normalized.toLowerCase().lastIndexOf('end');
+  let endIndex = -1;
+  const endPattern = /\bend\b/gi;
+  let endMatch;
+  while ((endMatch = endPattern.exec(normalized)) !== null) {
+    endIndex = endMatch.index;
+  }
   
   // step 4: validate that END keyword exists
   // if no END found, the CASE statement is malformed
@@ -83,43 +88,36 @@ function convertCase(expr, convertExpressionToSigma) {
     //   - nested CASE statements: WHEN CASE ... END THEN result
     // we track depth (parentheses) and inString (quoted strings) to find the correct THEN
     let thenIndex = -1;
-    let depth = 0;        // tracks nested parentheses depth
-    let inString = false; // flag indicating we're inside a quoted string
+    let depth = 0;         // tracks nested parentheses depth
+    let caseDepth = 0;     // tracks nested CASE depth
+    let inString = false;  // flag indicating we're inside a quoted string
     let stringChar = null; // the quote character (' or ") that opened the string
-    
+
     // step 8c: scan forward from WHEN to find the matching THEN
-    // example: "WHEN func(x, y) = 1 THEN z"
-    //   - at 'f': depth=0, not in string → continue
-    //   - at '(': depth=1, not in string → increment depth
-    //   - at ')': depth=0, not in string → decrement depth
-    //   - at 't': depth=0, check if "then" → found THEN
+    // tracks both paren depth and nested CASE depth to avoid matching
+    // THEN/WHEN/ELSE inside nested CASE statements
     for (let i = whenIndex + 4; i < body.length; i++) {
       const char = body[i];
-      
-      // handle string literals: track when we enter/exit quoted strings
-      // example: "WHEN col = 'test value' THEN result"
-      //   - at first ': inString = true, stringChar = '
-      //   - inside string: continue accumulating
-      //   - at second ': inString = false, stringChar = null
+
       if (!inString && (char === '"' || char === "'")) {
         inString = true;
         stringChar = char;
       } else if (inString && char === stringChar) {
         inString = false;
         stringChar = null;
-      } 
-      // handle parentheses: track nesting depth (only when not in a string)
-      // example: "WHEN func(x, nested(y)) THEN z"
-      //   - at first (: depth = 1
-      //   - at second (: depth = 2
-      //   - at first ): depth = 1
-      //   - at second ): depth = 0
+      }
       else if (!inString) {
         if (char === '(') depth++;
         else if (char === ')') depth--;
-        // when depth is 0 and we find "then", we've found the matching THEN
-        // example: "WHEN x = 1 THEN y" → at 't', depth=0, substring="then" → found
-        else if (depth === 0 && body.substring(i, i + 4) === 'then') {
+        // track nested CASE/END keywords
+        else if (depth === 0 && body.substring(i, i + 4) === 'case' && /\bcase\b/.test(body.substring(i, i + 5))) {
+          caseDepth++;
+        }
+        else if (depth === 0 && caseDepth > 0 && body.substring(i, i + 3) === 'end' && /\bend\b/.test(body.substring(i, i + 4))) {
+          caseDepth--;
+        }
+        // only match THEN at paren depth 0 AND case depth 0
+        else if (depth === 0 && caseDepth === 0 && body.substring(i, i + 4) === 'then' && /\bthen\b/.test(body.substring(i, i + 5))) {
           thenIndex = i;
           break;
         }
@@ -142,13 +140,29 @@ function convertCase(expr, convertExpressionToSigma) {
     const condition = convertExpressionToSigma(conditionStr);
     
     // step 8f: find the next boundary (WHEN, ELSE, or END) to determine where the result ends
-    // the result is everything between THEN and the next boundary
-    // example: "THEN y WHEN a=2 THEN b"
-    //   → nextWhenIndex = position of second "when"
-    //   → result = "y" (everything between "then" and next "when")
-    let nextWhenIndex = body.indexOf('when', thenIndex + 4);
-    let elseIndex = body.indexOf('else', thenIndex + 4);
-    let caseEndIndex = body.indexOf('end', thenIndex + 4);
+    // find the next WHEN/ELSE/END boundary at the same nesting level
+    // must skip keywords inside nested CASE...END blocks
+    let nextWhenIndex = -1;
+    let elseIndex = -1;
+    let caseEndIndex = -1;
+    {
+      let bd = 0; // nested CASE depth for boundary scanning
+      let bStr = false; let bChr = null;
+      for (let j = thenIndex + 4; j < body.length; j++) {
+        const c = body[j];
+        if (!bStr && (c === '"' || c === "'")) { bStr = true; bChr = c; }
+        else if (bStr && c === bChr) { bStr = false; bChr = null; }
+        else if (!bStr) {
+          if (/\bcase\b/.test(body.substring(j, j + 5)) && body.substring(j, j + 4) === 'case') { bd++; j += 3; continue; }
+          if (bd > 0 && /\bend\b/.test(body.substring(j, j + 4)) && body.substring(j, j + 3) === 'end') { bd--; j += 2; continue; }
+          if (bd === 0) {
+            if (nextWhenIndex === -1 && body.substring(j, j + 4) === 'when' && /\bwhen\b/.test(body.substring(j, j + 5))) { nextWhenIndex = j; break; }
+            if (elseIndex === -1 && body.substring(j, j + 4) === 'else' && /\belse\b/.test(body.substring(j, j + 5))) { elseIndex = j; break; }
+            if (caseEndIndex === -1 && body.substring(j, j + 3) === 'end' && /\bend\b/.test(body.substring(j, j + 4))) { caseEndIndex = j; break; }
+          }
+        }
+      }
+    }
     
     // step 8g: determine the earliest boundary (next WHEN, ELSE, or END)
     // this tells us where the current THEN result ends

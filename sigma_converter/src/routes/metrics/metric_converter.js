@@ -1,4 +1,6 @@
 const { buildSigmaMeasureFormula } = require('./formula/build_sigma_formula');
+const { findMatchingClosingParen } = require('../dimensions/utils/findMatchingClosingParen');
+const { parseFunctionArguments } = require('../dimensions/utils/parseFunctionArguments');
 
 
 /**
@@ -6,20 +8,25 @@ const { buildSigmaMeasureFormula } = require('./formula/build_sigma_formula');
  * @param {string} expr - expression string (e.g., "revenue - cost")
  * @returns {Array<string>} array of parts of the expression
  */
+// SQL functions/keywords to skip when extracting metric name identifiers from expressions
+const SQL_FUNCTIONS = new Set([
+  'nullif', 'coalesce', 'if', 'case', 'when', 'then', 'else', 'end',
+  'sum', 'count', 'avg', 'min', 'max', 'count_distinct',
+  'true', 'false', 'null', 'and', 'or', 'not', 'in', 'is',
+]);
+
 function parseExprParts(expr) {
   if (!expr || typeof expr !== 'string') {
     return [];
   }
 
   // extract parts: sequences of word characters (letters, digits, underscores) that are not part of operators or numbers
-  // - not starting with a digit
-  // - not part of a number (no digits before a decimal point)
-  // - not operators (+, -, *, /, etc.)
   const partPattern = /\b[a-zA-Z_][a-zA-Z0-9_]*\b/g;
   const parts = expr.match(partPattern) || [];
-  
-  // remove duplicates and return
-  return [...new Set(parts)];
+
+  // filter out SQL functions/keywords and remove duplicates
+  const filtered = parts.filter(p => !SQL_FUNCTIONS.has(p.toLowerCase()));
+  return [...new Set(filtered)];
 }
 
 
@@ -110,6 +117,25 @@ function convertExpression(expr, typeParamMetrics, semanticModel, allMetrics = [
     convertedExpr = convertedExpr.replace(regex, formula);
   }
 
+  // post-process: convert NULLIF(x, y) to Sigma-compatible if(x = y, null, x)
+  // Uses paren-aware parsing to handle nested functions like NULLIF(func(a,b), 0)
+  const nullifMatch = convertedExpr.match(/NULLIF\s*\(/i);
+  if (nullifMatch) {
+    const startPos = nullifMatch.index + nullifMatch[0].length;
+    const endPos = findMatchingClosingParen(convertedExpr, startPos);
+    if (endPos !== -1) {
+      const argsStr = convertedExpr.substring(startPos, endPos);
+      const args = parseFunctionArguments(argsStr);
+      if (args.length === 2) {
+        const x = args[0].trim();
+        const y = args[1].trim();
+        convertedExpr = convertedExpr.substring(0, nullifMatch.index) +
+          `if(${x} = ${y}, null, ${x})` +
+          convertedExpr.substring(endPos + 1);
+      }
+    }
+  }
+
   return convertedExpr;
 
 }
@@ -128,7 +154,7 @@ function convertMetricToSigma(metric, semanticModel, allMetrics = [], convertedM
   // description is an optional field in dbt metrics
   const sigmaMetric = {
     id: `${metric.name}`,
-    name: metric.name,
+    name: metric.label || metric.name,
     description: metric.description || metric.label || metric.name
   };
 
@@ -162,6 +188,22 @@ function convertMetricToSigma(metric, semanticModel, allMetrics = [], convertedM
     if (expr && typeParamMetrics && Array.isArray(typeParamMetrics) && typeParamMetrics.length > 0) {
       // parse expr and convert to Sigma formula
       sigmaMetric.formula = convertExpression(expr, typeParamMetrics, semanticModel, allMetrics, convertedMetrics);
+    }
+  }
+
+  // handle cumulative metrics (type: cumulative)
+  // Sigma does not have a native cumulative aggregate — use the underlying
+  // measure's formula and note that the BI tool should apply running total
+  if (metric.type === 'cumulative' && metric.type_params?.measure) {
+    const measureRef = metric.type_params.measure;
+    const measureName = typeof measureRef === 'string' ? measureRef : measureRef.name;
+    const typeParamMetrics = [{ name: measureName }];
+
+    sigmaMetric.formula = convertExpression(measureName, typeParamMetrics, semanticModel, allMetrics, convertedMetrics);
+    sigmaMetric.description = (sigmaMetric.description || '') + ' [Cumulative — apply running total in BI tool]';
+
+    if (convertedMetrics[measureName] && convertedMetrics[measureName].aggFunc !== undefined) {
+      convertedMetrics[metric.name] = convertedMetrics[measureName];
     }
   }
 

@@ -27,6 +27,19 @@ function canAddMetricToModel(metric, semanticModel, allMetrics = []) {
     }
   }
 
+  // check measure reference for cumulative and simple metrics
+  if (metric.type_params?.measure) {
+    const measureRef = metric.type_params.measure;
+    const measureName = typeof measureRef === 'string' ? measureRef : measureRef.name;
+    const measureExists = semanticModel.measures?.some(m => m.name === measureName);
+    if (!measureExists) {
+      const metricExists = allMetrics.some(m => m.name === measureName);
+      if (!metricExists) {
+        return false;
+      }
+    }
+  }
+
   // check numerator and denominator for ratio metrics
   if (metric.type === 'ratio' && metric.type_params) {
     const { numerator, denominator } = metric.type_params;

@@ -128,11 +128,11 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
 
       semanticModel.dimensions.forEach(dimension => {
 
-        const userFriendlyDimensionName = toDisplayName(dimension.name);
-        
+        const userFriendlyDimensionName = dimension.label || toDisplayName(dimension.name);
+
         const column = {
           id: `${dimension.name}`,
-          name: dimension.name,
+          name: dimension.label || dimension.name,
           description: dimension.description,
           formula: buildDimensionFormula(dimension, whTablePath[2], userFriendlyDimensionName)
         };
@@ -217,6 +217,16 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
       }
     }
 
+    // report missing foreign entities as structured error
+    const resolvedEntities = Object.keys(foreignEntityData);
+    const missingEntities = foreignEntities
+      .map(e => e.name)
+      .filter(name => !resolvedEntities.includes(name));
+    if (missingEntities.length > 0) {
+      console.error(`ERROR: Missing foreign entity Sigma models for [${modelName}]: ${missingEntities.join(', ')}. ` +
+        `These must be processed in an earlier layer.`);
+    }
+
     /*
     // add foreign entity sources and joins
     for (const [entityName, entityData] of Object.entries(foreignEntityData)) {
@@ -288,19 +298,30 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
     // ****************************************************
     // process dbt measures
     // ****************************************************
-    // TODO: handle create_metric property
-    // convert dbt semantics measures to Sigma data model metrics
+    // map of already converted metrics (name -> formula) — declared early so
+    // both measure processing and metric processing can populate it
+    const convertedMetrics = {};
+
+    // convert dbt semantics measures to Sigma data model metrics.
+    // All measures are stored in convertedMetrics for ratio/derived metric resolution.
+    // Only measures with create_metric: true are pushed as visible Sigma metrics
+    // (matching dbt behavior where create_metric auto-generates a simple metric).
     if (semanticModel.measures) {
       semanticModel.measures.forEach(measure => {
         const formulaObject = buildMeasureFormula(measure);
-        const metric = {
-          id: `${measure.name}`,
-          name: measure.name,
-          description: measure.description,
-          formula: formulaObject.formula
-        };
 
-        targetData.pages[0].elements[0].metrics.push(metric);
+        // store every measure in convertedMetrics for downstream metric resolution
+        convertedMetrics[measure.name] = formulaObject;
+
+        // only expose as a Sigma metric if dbt would auto-create one
+        if (measure.create_metric === true) {
+          targetData.pages[0].elements[0].metrics.push({
+            id: `${measure.name}`,
+            name: measure.label || measure.name,
+            description: measure.description || measure.label || measure.name,
+            formula: formulaObject.formula
+          });
+        }
       });
     }
 
@@ -309,77 +330,50 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
     // ****************************************************
     const crossModelMetrics = [];
 
-    // map of already converted metrics (name -> formula)
-    const convertedMetrics = {};
+    // Merge same-file metrics with external metrics from metrics-only sibling files.
+    // External metrics are discovered by the layer_processor and passed via options.
+    const sameFileMetrics = sourceData.metrics || [];
+    const externalMetrics = options.externalMetrics || [];
+    const seenNames = new Set(sameFileMetrics.map(m => m.name));
+    const allMetrics = [...sameFileMetrics];
+    for (const ext of externalMetrics) {
+      if (!seenNames.has(ext.name)) {
+        allMetrics.push(ext);
+        seenNames.add(ext.name);
+      }
+    }
 
-    if (sourceData.metrics) {
-      // process metrics in three passes:
-      // 1. first pass: simple metrics (which reference measures)
-      // 2. second pass: derived metrics (which may reference other metrics)
-      // 3. third pass: ratio metrics (reference other metrics)
-      const simpleMetrics = sourceData.metrics.filter(m => m.type === 'simple');
-      const derivedMetrics = sourceData.metrics.filter(m => m.type === 'derived');
-      const ratioMetrics = sourceData.metrics.filter(m => m.type === 'ratio');
+    if (allMetrics.length > 0) {
+      // process metrics in four passes:
+      // 1. simple metrics (reference measures)
+      // 2. cumulative metrics (reference measures)
+      // 3. derived metrics (may reference other metrics)
+      // 4. ratio metrics (reference other metrics)
+      const simpleMetrics = allMetrics.filter(m => m.type === 'simple');
+      const cumulativeMetrics = allMetrics.filter(m => m.type === 'cumulative');
+      const derivedMetrics = allMetrics.filter(m => m.type === 'derived');
+      const ratioMetrics = allMetrics.filter(m => m.type === 'ratio');
 
-      // process simple metrics first
-      simpleMetrics.forEach(metric => {
-        const canAddToCurrentModel = canAddMetricToModel(
-          metric,
-          semanticModel,
-          sourceData.metrics || []
-        );
-
-        if (canAddToCurrentModel) {
-          // add metric to current model if all dimensions and measures used by the dbt metric are in the current model
-          const sigmaMetric = convertMetricToSigma(metric, semanticModel, sourceData.metrics || [], convertedMetrics);
-          if (sigmaMetric.formula) {
-            targetData.pages[0].elements[0].metrics.push(sigmaMetric);
+      // helper to process a batch of metrics
+      const processMetricBatch = (metrics) => {
+        metrics.forEach(metric => {
+          const canAdd = canAddMetricToModel(metric, semanticModel, allMetrics);
+          if (canAdd) {
+            const sigmaMetric = convertMetricToSigma(metric, semanticModel, allMetrics, convertedMetrics);
+            if (sigmaMetric.formula) {
+              targetData.pages[0].elements[0].metrics.push(sigmaMetric);
+            }
+          } else {
+            crossModelMetrics.push(metric);
           }
-        } else {
-          // add to cross-model metrics if any dimensions or measures used by the dbt metric are not in the current model
-          crossModelMetrics.push(metric);
-        }
-      });
+        });
+      };
 
-      // process derived metrics second (they can now reference already-converted metrics)
-      derivedMetrics.forEach(metric => {
-        const canAddToCurrentModel = canAddMetricToModel(
-          metric,
-          semanticModel,
-          sourceData.metrics || []
-        );
-
-        if (canAddToCurrentModel) {
-          // add metric to current model if all dimensions and measures/metrics used by the dbt metric are in the current model
-          const sigmaMetric = convertMetricToSigma(metric, semanticModel, sourceData.metrics || [], convertedMetrics);
-          if (sigmaMetric.formula) {
-            targetData.pages[0].elements[0].metrics.push(sigmaMetric);
-          }
-        } else {
-          // add to cross-model metrics if any dimensions or measures/metrics used by the dbt metric are not in the current model
-          crossModelMetrics.push(metric);
-        }
-      });
-
-      // process ratio metrics third (they can now reference already-converted metrics)
-      ratioMetrics.forEach(metric => {
-        const canAddToCurrentModel = canAddMetricToModel(
-          metric,
-          semanticModel,
-          sourceData.metrics || []
-        );
-
-        if (canAddToCurrentModel) {
-          // add metric to current model if all metrics used by the dbt metric are in the current model
-          const sigmaMetric = convertMetricToSigma(metric, semanticModel, sourceData.metrics || [], convertedMetrics);
-          if (sigmaMetric.formula) {
-            targetData.pages[0].elements[0].metrics.push(sigmaMetric);
-          }
-        } else {
-          // add to cross-model metrics if any dimensions or metrics used by the dbt metric are not in the current model
-          crossModelMetrics.push(metric);
-        }
-      });
+      // process in dependency order: simple → cumulative → derived → ratio
+      processMetricBatch(simpleMetrics);
+      processMetricBatch(cumulativeMetrics);
+      processMetricBatch(derivedMetrics);
+      processMetricBatch(ratioMetrics);
     }
 
     // ****************************************************
