@@ -223,7 +223,7 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
       .map(e => e.name)
       .filter(name => !resolvedEntities.includes(name));
     if (missingEntities.length > 0) {
-      console.error(`ERROR: Missing foreign entity Sigma models for [${modelName}]: ${missingEntities.join(', ')}. ` +
+      console.error(`ERROR: Missing foreign entity Sigma models for [${semanticModel.name}]: ${missingEntities.join(', ')}. ` +
         `These must be processed in an earlier layer.`);
     }
 
