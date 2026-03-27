@@ -36,14 +36,14 @@ async function main() {
     changedFiles = process.argv.slice(2);
   }
   
-  // validate mode
-  if (config.mode !== 'initial' && config.mode !== 'update') {
-    throw new Error(`Invalid mode: ${config.mode}. Must be 'initial' or 'update'`);
+  // validate mode — accept 'auto' as alias that the workflow resolves before calling
+  if (!['initial', 'update', 'auto'].includes(config.mode)) {
+    throw new Error(`Invalid mode: ${config.mode}. Must be 'initial', 'update', or 'auto'`);
   }
-  
-  // validate update mode requirements
+
+  // update mode without specific files → process all models (full update)
   if (config.mode === 'update' && (!changedFiles || changedFiles.length === 0)) {
-    throw new Error('Update mode requires at least one changed file');
+    console.log('Update mode with no changed files — processing all models');
   }
   
   console.log('Configuration:');
