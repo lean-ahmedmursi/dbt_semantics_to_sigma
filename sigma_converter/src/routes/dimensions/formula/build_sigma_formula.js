@@ -14,7 +14,7 @@ const SIMPLE_COLUMN_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
  * @param {string} expr - SQL expression
  * @returns {string} Sigma formula
  */
-function convertExpressionToSigma(expr) {
+function convertExpressionToSigma(expr, sourceName) {
   if (!expr || typeof expr !== 'string') {
     return null;
   }
@@ -28,23 +28,26 @@ function convertExpressionToSigma(expr) {
   let iterations = 0;
   const maxIterations = 10; // Prevent infinite loops
   
+  // bind sourceName so recursive calls from CASE/COALESCE/CONCAT/SPLIT_PART carry it through
+  const recurse = (subExpr) => convertExpressionToSigma(subExpr, sourceName);
+
   // apply conversions iteratively until no more changes
   while (changed && iterations < maxIterations) {
     changed = false;
     iterations++;
-    
+
     const before = converted;
-    
+
     // convert CASE first because it may contain other functions
-    const caseResult = convertCase(converted, convertExpressionToSigma);
+    const caseResult = convertCase(converted, recurse);
     if (caseResult && caseResult !== converted) {
       converted = caseResult;
       changed = true;
       continue;
     }
-    
+
     // convert COALESCE (may appear inside CASE results or standalone)
-    const coalesceResult = convertCoalesce(converted, convertExpressionToSigma);
+    const coalesceResult = convertCoalesce(converted, recurse);
     if (coalesceResult && coalesceResult !== converted) {
       converted = coalesceResult;
       changed = true;
@@ -52,15 +55,15 @@ function convertExpressionToSigma(expr) {
     }
 
     // convert CONCAT (may appear inside CASE results or standalone)
-    const concatResult = convertConcat(converted, convertExpressionToSigma);
+    const concatResult = convertConcat(converted, recurse);
     if (concatResult && concatResult !== converted) {
       converted = concatResult;
       changed = true;
       continue;
     }
-    
+
     // convert SPLIT_PART (may appear inside CASE, CONCAT, or standalone)
-    const splitPartResult = convertSplitPart(converted, convertExpressionToSigma);
+    const splitPartResult = convertSplitPart(converted, recurse);
     if (splitPartResult && splitPartResult !== converted) {
       converted = splitPartResult;
       changed = true;
@@ -80,10 +83,10 @@ function convertExpressionToSigma(expr) {
       break;
     }
   }
-  
-  // convert any remaining column references
-  converted = convertColumnReferences(converted);
-  
+
+  // convert any remaining column references (table-qualified when sourceName provided)
+  converted = convertColumnReferences(converted, sourceName);
+
   return converted;
 }
 
@@ -97,7 +100,7 @@ function convertExpressionToSigma(expr) {
 function buildDimensionFormula(dimension, sourceName, userFriendlyDimensionName) {
 
   if (dimension.expr && dimension.expr !== dimension.name) {
-    return convertExpressionToSigma(dimension.expr);
+    return convertExpressionToSigma(dimension.expr, sourceName);
   }
   
   // if dimension type is time, use date_trunc with granularity
@@ -121,7 +124,7 @@ function buildEntityExpressionFormula(entity, sourceName) {
 
   // complex expression (SQL with operators/functions) — convert syntax
   if (entity.expr && !SIMPLE_COLUMN_RE.test(columnName)) {
-    return convertExpressionToSigma(entity.expr);
+    return convertExpressionToSigma(entity.expr, sourceName);
   }
 
   // simple column reference or no expr — use table-qualified format

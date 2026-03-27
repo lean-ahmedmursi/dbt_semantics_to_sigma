@@ -306,9 +306,12 @@ function convertSemantics(sourceFilePath, targetFilePath, options = {}) {
     // All measures are stored in convertedMetrics for ratio/derived metric resolution.
     // Only measures with create_metric: true are pushed as visible Sigma metrics
     // (matching dbt behavior where create_metric auto-generates a simple metric).
+    // warehouse table name for table-qualified column references in Sigma formulas
+    const whTableName = whTablePath[2];
+
     if (semanticModel.measures) {
       semanticModel.measures.forEach(measure => {
-        const formulaObject = buildMeasureFormula(measure);
+        const formulaObject = buildMeasureFormula(measure, whTableName);
 
         // store every measure in convertedMetrics for downstream metric resolution
         convertedMetrics[measure.name] = formulaObject;

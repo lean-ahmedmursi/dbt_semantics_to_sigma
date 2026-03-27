@@ -21,23 +21,23 @@ function buildSigmaMeasureFormula(typeParamMetric, semanticModel, allMetrics = [
   if (measure) {
 
     let sigmaFormulaObject;
-    
+
     // check if metric reference has a filter
     if (typeof typeParamMetric === 'object' && typeParamMetric.filter) {
-      const filterStr = typeof typeParamMetric.filter === 'string' 
-        ? typeParamMetric.filter 
+      const filterStr = typeof typeParamMetric.filter === 'string'
+        ? typeParamMetric.filter
         : JSON.stringify(typeParamMetric.filter);
       sigmaFormulaObject = buildMeasureFormulaWithFilter(measure, filterStr, semanticModel.name);
     } else {
-      // no filter, use the measure directly
-      sigmaFormulaObject = buildMeasureFormula(measure);
+      // prefer pre-built formula from convertedMetrics (already table-qualified)
+      sigmaFormulaObject = convertedMetrics[metricName] || buildMeasureFormula(measure);
     }
-    
+
     // store formula object in convertedMetrics for future use
     convertedMetrics[metricName] = sigmaFormulaObject;
-    
+
     return sigmaFormulaObject.formula;
-    
+
   }
 
   // if the referenced metric is not present as a measure, check if it's present as a metric in the source data

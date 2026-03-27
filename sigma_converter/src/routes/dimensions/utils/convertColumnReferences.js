@@ -23,30 +23,26 @@ const SIGMA_FUNCTIONS = new Set([
 ]);
 
 /**
- * converts column references in an expression to Sigma format [column_name]
- * 
+ * converts column references in an expression to Sigma format [table/column_name]
+ *
  * this function identifies SQL column references and converts them to Sigma's bracket notation, while skipping:
  * - SQL functions and keywords (e.g., CONCAT, CASE, WHEN)
  * - identifiers inside quoted strings (e.g., 'my_column')
  * - already bracketed references (e.g., [col1])
- * 
- * examples:
- *   input:  col1 + col2 * col3
- *   output: [col1] + [col2] * [col3]
- * 
- *   input:  concat(col1, col2)
- *   output: concat([col1], [col2])
- * 
- *   input:  col1 = 'my_column' AND col2 = 'value'
- *   output: [col1] = 'my_column' AND [col2] = 'value'
- * 
- *   input:  [col1] + col2
+ *
+ * when sourceName is provided, column references are table-qualified:
+ *   input:  col1 + col2   (sourceName='my_table')
+ *   output: [my_table/col1] + [my_table/col2]
+ *
+ * without sourceName, bare bracket notation is used:
+ *   input:  col1 + col2
  *   output: [col1] + [col2]
- * 
+ *
  * @param {string} expr - expression string
- * @returns {string} expression with column references converted to [column_name] format
+ * @param {string} [sourceName] - optional warehouse table name for qualified references
+ * @returns {string} expression with column references converted
  */
-function convertColumnReferences(expr) {
+function convertColumnReferences(expr, sourceName) {
 
   // step 1: normalize whitespace
   // converts multiple spaces/tabs/newlines to single space and trims edges
@@ -97,10 +93,12 @@ function convertColumnReferences(expr) {
     // step 4d: convert the column reference
     // apply user-friendly name conversion if enabled (underscores → spaces)
     // example: my_column → my column if USER_FRIENDLY_COLUMN_NAMES=true
+    const displayName = toDisplayName(identifier);
+    const ref = sourceName ? `[${sourceName}/${displayName}]` : `[${displayName}]`;
     replacements.push({
       start: startPos,
       end: endPos,
-      replacement: `[${toDisplayName(identifier)}]`
+      replacement: ref
     });
   }
   
