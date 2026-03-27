@@ -11,7 +11,7 @@ const fs = require('fs');
  */
 async function main() {
   console.log('=== DBT Semantic Layer Processor ===');
-  console.log(`Mode: ${process.env.MODE.toUpperCase()}`);
+  console.log(`Mode: ${(process.env.MODE || 'unknown').toUpperCase()}`);
   console.log('Processing models layer by layer based on DAG\n');
   
   // configuration
@@ -27,7 +27,7 @@ async function main() {
     mode: process.env.MODE
   };
 
-  changedFiles = [];
+  let changedFiles = [];
   
   // override with command line arguments if provided for update mode
   // process.argv[0] = node executable, process.argv[1] = script path

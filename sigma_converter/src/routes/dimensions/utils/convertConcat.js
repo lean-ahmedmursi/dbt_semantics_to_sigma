@@ -1,6 +1,5 @@
 const { findMatchingClosingParen } = require('./findMatchingClosingParen');
 const { parseFunctionArguments } = require('./parseFunctionArguments');
-const { convertColumnReferences } = require('./convertColumnReferences');
 
 /**
  * converts CONCAT expressions to Sigma syntax
@@ -34,8 +33,7 @@ function convertConcat(expr, convertExpressionToSigma) {
         (arg.startsWith('"') && arg.endsWith('"'))) {
       return arg;
     }
-    // convert column references to Sigma syntax, then recursively convert nested expressions
-    arg = convertColumnReferences(arg);
+    // recursively convert nested expressions (convertExpressionToSigma handles column refs)
     return convertExpressionToSigma(arg);
   });
 

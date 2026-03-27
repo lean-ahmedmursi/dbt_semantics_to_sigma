@@ -698,6 +698,169 @@ mockSemanticModel.measures.forEach(m => {
 }
 
 // =====================================================
+// TABLE QUALIFICATION (sourceName parameter)
+// =====================================================
+
+testEqual(
+  'sourceName: simple column gets table-qualified',
+  convertExpressionToSigma('col_a', 'my_table'),
+  '[my_table/col_a]'
+);
+
+testEqual(
+  'sourceName: CASE expression gets table-qualified columns',
+  convertExpressionToSigma("CASE WHEN status = 'A' THEN name END", 'orders'),
+  "if([orders/status] = 'A',[orders/name])"
+);
+
+testEqual(
+  'sourceName: COALESCE gets table-qualified',
+  convertExpressionToSigma('COALESCE(col_a, col_b)', 'src'),
+  'coalesce([src/col_a], [src/col_b])'
+);
+
+testEqual(
+  'sourceName: IS NOT NULL gets table-qualified',
+  convertExpressionToSigma('lean_user_id IS NOT NULL', 'dim_entity'),
+  'isnotnull([dim_entity/lean_user_id])'
+);
+
+testEqual(
+  'sourceName: CONCAT gets table-qualified',
+  convertExpressionToSigma("CONCAT(first, ' ', last)", 'tbl'),
+  "[tbl/first] & ' ' & [tbl/last]"
+);
+
+testEqual(
+  'sourceName: SPLIT_PART gets table-qualified',
+  convertExpressionToSigma("SPLIT_PART(email, '@', 1)", 'users'),
+  "splitpart([users/email],'@',1)"
+);
+
+testEqual(
+  'sourceName: without sourceName stays bare',
+  convertExpressionToSigma('col_a'),
+  '[col_a]'
+);
+
+// =====================================================
+// MEASURE FORMULA WITH sourceName
+// =====================================================
+
+testEqual(
+  'Measure + sourceName: simple column',
+  buildMeasureFormula({ agg: 'sum', expr: 'm_total' }, 'orders').formula,
+  'sum([orders/m_total])'
+);
+
+testEqual(
+  'Measure + sourceName: CASE expression',
+  buildMeasureFormula({ agg: 'count_distinct', expr: "CASE WHEN status = 'ACTIVE' THEN entity_id END" }, 'tbl').formula,
+  "countdistinct(if([tbl/status] = 'ACTIVE',[tbl/entity_id]))"
+);
+
+testEqual(
+  'Measure + sourceName: without sourceName stays bare',
+  buildMeasureFormula({ agg: 'sum', expr: 'm_total' }).formula,
+  'sum([m_total])'
+);
+
+// =====================================================
+// DIMENSION FORMULA (buildDimensionFormula)
+// =====================================================
+
+const { buildDimensionFormula, buildEntityExpressionFormula } = require('../formula/build_sigma_formula');
+
+testEqual(
+  'Dimension: custom expr gets converted',
+  buildDimensionFormula({ name: 'status_group', expr: "CASE WHEN status = 'A' THEN 'active' ELSE 'other' END" }, 'tbl', 'Status Group'),
+  "if([tbl/status] = 'A','active','other')"
+);
+
+testEqual(
+  'Dimension: time type gets DateTrunc',
+  buildDimensionFormula({ name: 'ds', type: 'time', type_params: { time_granularity: 'month' } }, 'orders', 'Ds'),
+  "DateTrunc('month', [orders/Ds])"
+);
+
+testEqual(
+  'Dimension: default (expr === name) gets table-qualified',
+  buildDimensionFormula({ name: 'status', expr: 'status' }, 'orders', 'Status'),
+  '[orders/Status]'
+);
+
+testEqual(
+  'Dimension: no expr gets table-qualified',
+  buildDimensionFormula({ name: 'status' }, 'orders', 'Status'),
+  '[orders/Status]'
+);
+
+// =====================================================
+// ENTITY EXPRESSION FORMULA
+// =====================================================
+
+testEqual(
+  'Entity: simple expr gets table-qualified',
+  buildEntityExpressionFormula({ name: 'application', expr: 'application_id' }, 'fact_table'),
+  '[fact_table/application_id]'
+);
+
+testEqual(
+  'Entity: complex expr gets converted',
+  buildEntityExpressionFormula({ name: 'test', expr: "COALESCE(id_a, id_b)" }, 'tbl'),
+  'coalesce([tbl/id_a], [tbl/id_b])'
+);
+
+// =====================================================
+// NULL/EMPTY INPUT EDGE CASES
+// =====================================================
+
+testEqual(
+  'Null input returns null',
+  convertExpressionToSigma(null),
+  null
+);
+
+testEqual(
+  'Empty string returns null',
+  convertExpressionToSigma(''),
+  null
+);
+
+testEqual(
+  'Non-string input returns null',
+  convertExpressionToSigma(123),
+  null
+);
+
+// =====================================================
+// canAddMetricToModel
+// =====================================================
+
+const { canAddMetricToModel } = require('../../metrics/metric_analyzer');
+
+{
+  const model = {
+    measures: [{ name: 'total' }, { name: 'success' }],
+    entities: [{ name: 'app' }],
+  };
+
+  const checks = [
+    ['measure exists -> true', canAddMetricToModel(
+      { type: 'simple', type_params: { measure: 'total' } }, model, []) === true],
+    ['measure missing -> false', canAddMetricToModel(
+      { type: 'simple', type_params: { measure: 'nonexistent' } }, model, []) === false],
+    ['ratio both exist -> true', canAddMetricToModel(
+      { type: 'ratio', type_params: { numerator: { name: 'success' }, denominator: { name: 'total' } } }, model, []) === true],
+    ['ratio denom missing -> false', canAddMetricToModel(
+      { type: 'ratio', type_params: { numerator: { name: 'success' }, denominator: { name: 'missing' } } }, model, []) === false],
+  ];
+  checks.forEach(([name, ok]) => {
+    if (ok) { passed++; } else { failed++; console.error(`FAIL: canAddMetricToModel — ${name}`); }
+  });
+}
+
+// =====================================================
 // Summary
 // =====================================================
 

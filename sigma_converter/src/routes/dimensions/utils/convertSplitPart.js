@@ -1,6 +1,5 @@
 const { findMatchingClosingParen } = require('./findMatchingClosingParen');
 const { parseFunctionArguments } = require('./parseFunctionArguments');
-const { convertColumnReferences } = require('./convertColumnReferences');
 
 /**
  * converts SPLIT_PART function to Sigma syntax
@@ -32,9 +31,8 @@ function convertSplitPart(expr, convertExpressionToSigma) {
   }
 
   // convert first argument (may be a column reference or nested expression)
-  // first convert column references, then recursively convert nested expressions
-  let firstArg = convertColumnReferences(args[0].trim());
-  firstArg = convertExpressionToSigma(firstArg);
+  // convertExpressionToSigma handles column refs internally
+  const firstArg = convertExpressionToSigma(args[0].trim());
   // keep other arguments as-is (they're strings/numbers)
   const otherArgs = args.slice(1).map(arg => arg.trim());
 
